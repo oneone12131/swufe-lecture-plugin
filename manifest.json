@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "SWUFE讲座自动报名",
+  "version": "0.1.0",
+  "description": "西南财经大学 WebVPN 学术讲座自动报名：定时刷新+条件匹配+自动报名+Server酱推送+保险版自动取消",
+  "permissions": ["storage", "alarms", "tabs"],
+  "host_permissions": [
+    "https://webvpn.swufe.edu.cn/*",
+    "https://*.swufe.edu.cn/*",
+    "https://sctapi.ftqq.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://webvpn.swufe.edu.cn/*",
+        "https://*.swufe.edu.cn/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SWUFE讲座自动报名",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

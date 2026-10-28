@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SWUFE讲座自动报名</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="app-head">
+      <div class="app-head-inner">
+        <img class="app-mark" src="icons/icon48.png" alt="" />
+        <span class="app-title">SWUFE 讲座自动报名</span>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>功能开关</h2>
+      <label class="row">
+        <input type="checkbox" id="enabled" />
+        <span><b>启用自动扫描</b>（整页定时刷新 + 自动报名）</span>
+      </label>
+      <label class="row">
+        <input type="checkbox" id="dryRun" />
+        <span>调试模式（只扫描匹配，不真正报名）</span>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>报名条件</h2>
+      <label>校区过滤（柳林 / 光华，留空=不限）
+        <input type="text" id="campus" placeholder="柳林" />
+      </label>
+      <label>讲座形式（线下 / 线上，留空=不限）
+        <input type="text" id="lectureForm" placeholder="线下" />
+      </label>
+      <label>讲座名称关键词（逗号分隔，留空=不限）
+        <input type="text" id="titleKeywords" placeholder="中国式现代化,资本市场" />
+      </label>
+      <label>讲座类别关键词（逗号分隔，留空=不限）
+        <input type="text" id="categoryKeywords" placeholder="《中国式现代化与经济高质量发展》讲座" />
+      </label>
+      <label>主办单位关键词（逗号分隔，留空=不限）
+        <input type="text" id="hostKeywords" placeholder="金融学院" />
+      </label>
+      <label>排除课表冲突（避免与你的课撞车）
+        <select id="myCampus">
+          <option value="柳林">柳林校区（课表）</option>
+          <option value="光华">光华校区（课表）</option>
+        </select>
+      </label>
+      <label class="row">
+        <input type="checkbox" id="scheduleEnabled" />
+        <span>启用课表冲突排除</span>
+      </label>
+      <div id="scheduleGrid" class="grid"></div>
+      <div class="tip">点击格子标记"这节有课"。抢课时按讲座时间换算成周几+节次，落在已标记节次则不抢。</div>
+      <label>刷新间隔（分钟，1~5）
+        <input type="number" id="intervalMin" min="1" max="5" step="0.5" />
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>微信通知（Server酱）</h2>
+      <label>Server酱 SendKey（sctapi.ftqq.com）
+        <input type="password" id="serverChanKey" placeholder="你的 SendKey" />
+      </label>
+      <div class="btnrow">
+        <button id="testPush" class="btn ghost">测试推送</button>
+      </div>
+      <label class="row">
+        <input type="checkbox" id="insEnabled" />
+        <span>保险版：未确认自动取消（防违约）</span>
+      </label>
+      <label>报名后确认窗口（小时）
+        <input type="number" id="confirmWindowHours" min="1" />
+      </label>
+      <label>讲座开始前 N 小时仍未确认则自动取消
+        <input type="number" id="autoCancelHoursBeforeStart" min="1" />
+      </label>
+    </section>
+
+    <div class="btnrow">
+      <button id="save" class="btn primary">保存设置</button>
+      <button id="scanNow" class="btn ghost">立即扫描一次</button>
+      <button id="resetReg" class="btn danger">重置已报名记录</button>
+    </div>
+    <div id="saveTip" class="tip"></div>
+
+    <section class="card">
+      <h2>待确认的报名（保险版）</h2>
+      <div id="pendingList" class="list"></div>
+    </section>
+
+    <section class="card">
+      <h2>运行日志</h2>
+      <pre id="logs" class="logs"></pre>
+    </section>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

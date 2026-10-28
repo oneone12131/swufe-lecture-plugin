@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- 白色圆角底（书内部镂空透出此色） -->
+  <rect x="2" y="2" width="124" height="124" rx="20" fill="#ffffff"/>
+  <!-- 打开的书：左右两页（粗线条镂空，铺满） -->
+  <path d="M64 30 L16 12 L16 104 L64 104 Z"
+        fill="none" stroke="#1a4a8a" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M64 30 L112 12 L112 104 L64 104 Z"
+        fill="none" stroke="#1a4a8a" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- 书脊 -->
+  <path d="M64 30 L64 104" stroke="#1a4a8a" stroke-width="6" stroke-linecap="round"/>
+  <!-- 底座 -->
+  <path d="M40 112 L88 112" stroke="#1a4a8a" stroke-width="6" stroke-linecap="round"/>
+  <path d="M34 120 L94 120" stroke="#1a4a8a" stroke-width="6" stroke-linecap="round"/>
+  <!-- 右上弧线 -->
+  <path d="M90 10 Q98 5 106 10" stroke="#1a4a8a" stroke-width="6" stroke-linecap="round" fill="none"/>
+</svg>
