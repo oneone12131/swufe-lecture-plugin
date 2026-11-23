@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SWUFE讲座自动报名",
   "version": "0.1.0",
-  "description": "西南财经大学 WebVPN 学术讲座自动报名：定时刷新+条件匹配+自动报名+Server酱推送+保险版自动取消",
+  "description": "西南财经大学 WebVPN 学术讲座自动报名：定时刷新+条件匹配+自动报名+微信通知",
   "permissions": ["storage", "alarms", "tabs"],
   "host_permissions": [
     "https://webvpn.swufe.edu.cn/*",

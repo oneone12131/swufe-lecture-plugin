@@ -62,23 +62,26 @@
     </section>
 
     <section class="card">
+      <h2>讲座提醒</h2>
+      <label>每日提醒时间（汇总第二天要参加的讲座推送）
+        <input type="time" id="remindTime" />
+      </label>
+      <div class="tip">到点后后台自动汇总次日讲座推送到微信；仅文字通知，无法在微信里操作；如需取消报名，请到学校系统办理。</div>
+    </section>
+
+    <section class="card">
       <h2>微信通知（Server酱）</h2>
-      <label>Server酱 SendKey（sctapi.ftqq.com）
+      <label>Server酱 SendKey（选填）
         <input type="password" id="serverChanKey" placeholder="你的 SendKey" />
       </label>
       <div class="btnrow">
         <button id="testPush" class="btn ghost">测试推送</button>
       </div>
-      <label class="row">
-        <input type="checkbox" id="insEnabled" />
-        <span>保险版：未确认自动取消（防违约）</span>
-      </label>
-      <label>报名后确认窗口（小时）
-        <input type="number" id="confirmWindowHours" min="1" />
-      </label>
-      <label>讲座开始前 N 小时仍未确认则自动取消
-        <input type="number" id="autoCancelHoursBeforeStart" min="1" />
-      </label>
+      <div class="note">
+        <b>作用：</b>报名成功、次日讲座提醒等消息推送到你的微信；不填 SendKey 则不推送，其余功能正常。<br/>
+        <b>获取：</b>打开 sct.ftqq.com 注册/登录 Server酱（方糖），在「SendKey」页面复制你的 SendKey 粘贴到上方。<br/>
+        <b>限制：</b>通知只能发文字，无法在微信里操作；如需取消报名，请到学校系统办理。
+      </div>
     </section>
 
     <div class="btnrow">
@@ -87,11 +90,6 @@
       <button id="resetReg" class="btn danger">重置已报名记录</button>
     </div>
     <div id="saveTip" class="tip"></div>
-
-    <section class="card">
-      <h2>待确认的报名（保险版）</h2>
-      <div id="pendingList" class="list"></div>
-    </section>
 
     <section class="card">
       <h2>运行日志</h2>

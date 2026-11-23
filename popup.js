@@ -11,9 +11,7 @@ const FIELDS = [
   ["hostKeywords", "csv"],
   ["intervalMin", "number"],
   ["serverChanKey", "text"],
-  ["insEnabled", "checkboxIns"],
-  ["confirmWindowHours", "number"],
-  ["autoCancelHoursBeforeStart", "number"]
+  ["remindTime", "time"]
 ];
 
 function toCsv(v) { return Array.isArray(v) ? v.join(",") : (v || ""); }
@@ -47,9 +45,7 @@ async function load() {
   $("#hostKeywords").value = toCsv(c.hostKeywords);
   $("#intervalMin").value = c.intervalMin || 2;
   $("#serverChanKey").value = c.serverChanKey || "";
-  $("#insEnabled").checked = !!(c.insurance && c.insurance.enabled);
-  $("#confirmWindowHours").value = (c.insurance && c.insurance.confirmWindowHours) || 2;
-  $("#autoCancelHoursBeforeStart").value = (c.insurance && c.insurance.autoCancelHoursBeforeStart) || 3;
+  $("#remindTime").value = c.remindTime || "23:00";
   // 课表
   const sc = c.schedule || {};
   $("#myCampus").value = sc.myCampus || "柳林";
@@ -66,10 +62,8 @@ function renderGrid() {
   const periods = PERIODS[campus] || [];
   const grid = $("#scheduleGrid");
   grid.innerHTML = "";
-  // 表头
   let html = '<div class="ghead glabel">节次</div>' +
     WEEKDAYS.map(d => `<div class="ghead">周${d}</div>`).join("");
-  // 行
   periods.forEach((p, idx) => {
     const n = String(idx + 1).padStart(2, "0");
     html += `<div class="gcell glabel"><b>${n}</b><span class="t">${p[0]}-${p[1]}</span></div>`;
@@ -111,16 +105,12 @@ async function save() {
     hostKeywords: fromCsv($("#hostKeywords").value),
     intervalMin: parseFloat($("#intervalMin").value) || 2,
     serverChanKey: $("#serverChanKey").value.trim(),
+    remindTime: $("#remindTime").value || "23:00",
     refreshMode: "reload",
-    schedule,
-    insurance: {
-      enabled: $("#insEnabled").checked,
-      confirmWindowHours: parseInt($("#confirmWindowHours").value) || 2,
-      autoCancelHoursBeforeStart: parseInt($("#autoCancelHoursBeforeStart").value) || 3
-    }
+    schedule
   };
   await chrome.storage.local.set({ cfg });
-  chrome.runtime.sendMessage({ type: "CONFIG_UPDATED" }).catch(() => {}); // 通知后台重建扫描闹钟
+  chrome.runtime.sendMessage({ type: "CONFIG_UPDATED" }).catch(() => {});
   $("#saveTip").textContent = "已保存 ✓";
   setTimeout(() => { $("#saveTip").textContent = ""; }, 2000);
 }
@@ -136,46 +126,6 @@ async function sendToTab(type, extra) {
   return chrome.tabs.sendMessage(tab.id, { type, ...extra }).catch(e => ({ err: String(e) }));
 }
 
-async function renderPending() {
-  const { pending } = await chrome.storage.local.get("pending");
-  const list = $("#pendingList");
-  list.innerHTML = "";
-  const arr = pending || [];
-  if (!arr.length) { list.innerHTML = "<div class='empty'>暂无待确认报名</div>"; return; }
-  for (const p of arr.slice().reverse()) {
-    const d = document.createElement("div");
-    d.className = "item";
-    const status = { pending: "⏳待确认", confirmed: "✅已确认", cancelled: "🚫已取消", expired: "⚠️需手动" }[p.status] || p.status;
-    d.innerHTML = `
-      <div><b>${p.title}</b> <span class="tag">${status}</span></div>
-      <div class="sub">${p.time || ""} · ${p.location || ""}</div>
-      <div class="btnrow small">
-        <button class="btn ok" data-k="${p.key}" data-a="confirm">确认参加</button>
-        <button class="btn danger" data-k="${p.key}" data-a="cancel">取消报名</button>
-      </div>`;
-    list.appendChild(d);
-  }
-  list.querySelectorAll("button[data-a]").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const key = btn.dataset.k, act = btn.dataset.a;
-      const { pending: pd } = await chrome.storage.local.get("pending");
-      const p = (pd || []).find(x => x.key === key);
-      if (!p) return;
-      if (act === "confirm") {
-        p.status = "confirmed";
-        await chrome.storage.local.set({ pending: pd });
-        renderPending();
-      } else {
-        const r = await sendToTab("CANCEL", { key });
-        if (!r || r.err) { alert("请在讲座页面上执行取消，插件当前未连接该页面"); return; }
-        p.status = "cancelled";
-        await chrome.storage.local.set({ pending: pd });
-        renderPending();
-      }
-    });
-  });
-}
-
 async function renderLogs() {
   const state = await sendToTab("GET_STATE");
   if (state && state.logs && state.logs.length) {
@@ -187,16 +137,14 @@ async function renderLogs() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   await load();
-  await renderPending();
   await renderLogs();
-  chrome.runtime.sendMessage({ type: "CONFIG_UPDATED" }).catch(() => {}); // 确保扫描闹钟存在
+  chrome.runtime.sendMessage({ type: "CONFIG_UPDATED" }).catch(() => {});
 
   $("#save").addEventListener("click", async () => { await save(); await renderLogs(); });
 
-  // 课表：切换校区时按该校区节次时间重画网格
   $("#myCampus").addEventListener("change", () => { renderGrid(); });
 
-  // ③ 自动保存：任何输入变化即写入存储，切换页面/关弹窗后再开也不会丢
+  // 自动保存：任何输入变化即写入存储，切换页面/关弹窗后再开也不会丢
   let _autosaveTimer;
   document.querySelectorAll("input").forEach(inp => {
     inp.addEventListener("input", () => {
@@ -205,7 +153,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
-  // ② 按 Enter：空框则把默认提示(placeholder)填入，然后保存
+  // 按 Enter：空框则把默认提示(placeholder)填入，然后保存
   document.querySelectorAll("input").forEach(inp => {
     inp.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;
@@ -214,21 +162,23 @@ document.addEventListener("DOMContentLoaded", async () => {
       save();
     });
   });
+
   $("#scanNow").addEventListener("click", async () => {
     const r = await sendToTab("CYCLE");
     $("#saveTip").textContent = r && !r.err ? "已触发扫描，见页面日志" : "未连接讲座页面，请先打开讲座页";
   });
+
   // 重置已报名记录：清掉脏数据（之前误判/已取消的），让插件可以重新尝试
   $("#resetReg").addEventListener("click", async () => {
-    if (!confirm("确定清除所有“已报名/待确认”记录？\n\n用于清掉误判留下的脏数据。清除后，插件会重新尝试报名符合条件的讲座。")) return;
-    await chrome.storage.local.set({ registered: [], pending: [] });
-    await renderPending();
+    if (!confirm("确定清除所有已报名记录？\n\n用于清掉误判留下的脏数据。清除后，插件会重新尝试报名符合条件的讲座。")) return;
+    await chrome.storage.local.set({ booked: [] });
     $("#saveTip").textContent = "已重置报名记录 ✓ 可再次“立即扫描一次”";
   });
+
   $("#testPush").addEventListener("click", async () => {
     await save();
     const r = await chrome.runtime.sendMessage({ type: "PUSH", title: "测试消息", desp: "来自 SWUFE讲座插件的测试推送。" }).catch(e => ({ err: String(e) }));
-    if (r && r.err) { alert("推送失败：" + r.err + "；请确认 SendKey 已正确填写。"); }
+    if (r && r.err) { alert("推送失败：" + r.err + "；请确认 SendKey 已正确填写，或留空则不推送。"); }
     else { $("#saveTip").textContent = "推送已发出，请查看微信"; }
   });
 });

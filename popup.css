@@ -105,6 +105,8 @@ input:focus, select:focus { border-color: #1a4a8a; box-shadow: 0 0 0 3px rgba(26
 .btn.danger { background: #fdeeef; color: #c62828; border-color: #eebbbb; }
 .btn.small { padding: 4px 9px; font-size: 11px; }
 .tip { color: #5a6c85; font-size: 11.5px; margin-top: 6px; min-height: 16px; }
+.note { color: #5a6c85; font-size: 11px; line-height: 1.7; margin-top: 8px; padding: 8px 10px; background: #f4f8fd; border: 1px solid #dfe9f4; border-radius: 8px; }
+.note b { color: #1a4a8a; }
 
 .list .item {
   background: #ffffff;
