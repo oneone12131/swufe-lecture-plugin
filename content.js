@@ -77,9 +77,11 @@
   async function setArr(k, v) { await chrome.storage.local.set({ [k]: v }); }
 
   /* ---------------- 元素查找（基于文字） ---------------- */
+  const norm = s => String(s || "").replace(/\s+/g, "").trim();
   function clickableByText(text) {
+    const t = norm(text);
     return $all('button, a, [role="button"], [class*="btn"], [class*="button"], [class*="link"]')
-      .find(el => (el.innerText || "").trim().includes(text));
+      .find(el => norm(el.innerText).includes(t));
   }
   function tableWithHeader(label) {
     const tables = $all("table");
@@ -97,17 +99,49 @@
 
   /* ---------------- 页面状态识别 ---------------- */
   function isLoginPage() {
-    return !!$all('input[type="password"]').find(isVisible);
+    if (/authserver\/login|\/login(\?|$)/.test(location.href)) return true;
+    if ($all('input[type="password"]').length || $all('#password').length) return true;
+    const body = document.body ? (document.body.innerText || "") : "";
+    return body.includes("账号登录") && (body.includes("验证码登录") || body.includes("扫码登录")) && $all("input").length > 0;
+  }
+  function passwordInput() {
+    return $all('input[type="password"]')[0] || $all('#password')[0] || null;
+  }
+  function loginButton() {
+    const byId = $all('#login_submit').filter(isVisible);
+    if (byId[0]) return byId[0];
+    const pool = $all('button, a, [role="button"], [class*="btn" i], [class*="button" i], [class*="login" i], div, span');
+    return pool.filter(isVisible).find(el => norm(el.innerText) === "登录") || null;
   }
   function isLectureList() {
     const b = clickableByText("讲座报名");
     return !!(b && isVisible(b));
   }
 
-  // 应用中心：找到“学术讲座”卡片，悬停露出绿色「查看」后点击
+  // 会话失效提示关键词
+  const EXPIRE_WORDS = ["登录超时", "会话过期", "会话失效", "登录已失效", "已过期", "重新登录", "请重新登录", "身份失效", "登录状态失效", "超时未操作", "长时间未操作", "静默"];
+  function colorIsRed(c) {
+    const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(c || "");
+    if (!m) return false;
+    const r = +m[1], g = +m[2], b = +m[3];
+    return r > 150 && g < 110 && b < 110;
+  }
+  // 弹窗/提示里的红色失效文案 → 判定会话已失效，需要刷新重登
+  function expiredAlertPresent() {
+    const sel = "[class*='message' i],[class*='toast' i],[class*='dialog' i],[class*='alert' i],[class*='notice' i],[class*='modal' i]";
+    return $all(sel).filter(isVisible).some(el => {
+      const t = (el.innerText || "").trim();
+      if (!t || !EXPIRE_WORDS.some(w => t.includes(w))) return false;
+      const red = colorIsRed(getComputedStyle(el).color) ||
+        $all("*", el).some(c => colorIsRed(getComputedStyle(c).color) && (c.innerText || "").trim());
+      return red || /超时|失效|过期|重新登录/.test(t);
+    });
+  }
+
+  // 应用中心：找到“学术讲座”卡片，悬停露出绿色「查看」后点击（兜底路径）
   async function openLectureFromAppCenter() {
     const cards = $all('div,li,a,span')
-      .filter(el => isVisible(el) && (el.innerText || "").trim() === "学术讲座");
+      .filter(el => isVisible(el) && norm(el.innerText) === "学术讲座");
     const card = cards[cards.length - 1];
     if (!card) { log("应用中心未找到「学术讲座」卡片"); return false; }
     for (const t of ["mouseenter", "mouseover"]) {
@@ -116,36 +150,43 @@
     await sleep(350);
     const scope = card.parentElement || card;
     const view = $all('button,a,[role="button"],[class*="btn"]', scope)
-      .find(b => /查看/.test((b.innerText || "").trim()) && isVisible(b));
+      .find(b => /查看/.test(norm(b.innerText)) && isVisible(b));
     if (view) view.click(); else card.click();
     return true;
   }
 
-  // 会话失效 / 不在讲座页时，按内置路径自动恢复：
-  // 踢出旧会话 → （已填好密码则）登录 → 应用中心 → 科研·学术讲座 查看
+  // 会话失效 / 不在讲座页时自动恢复：
+  // 失效弹窗 → 刷新重登；登录后通常直接回到讲座页；应用中心路径仅作兜底
   async function recoverIfNeeded() {
-    // 1) 单处登录提示：踢出以上会话并继续登录
+    // 1) 单处登录提示：踢出以上会话并继续登录（个别情况才出现）
     for (let i = 0; i < 3; i++) {
       const kick = clickableByText("踢出以上会话并继续登录");
       if (kick && isVisible(kick)) { kick.click(); await sleep(1500); } else break;
     }
-    // 2) 登录页：密码需已由用户/浏览器填好才代为点击；插件不保存账号密码
+    // 2) 会话失效红色弹窗 → 刷新页面，WebVPN 会回到登录页
+    if (expiredAlertPresent()) {
+      log("检测到会话失效提示，刷新页面重新登录");
+      location.reload();
+      return false;
+    }
+    // 3) 登录页：密码已由用户/浏览器填好才代为点击；登录后通常直接回到讲座页
     if (isLoginPage()) {
-      const pwd = $all('input[type="password"]').find(isVisible);
+      const pwd = passwordInput();
       if (!pwd || !pwd.value) {
         log("会话已失效：登录需手动完成（插件不保存密码），登录后回到学术讲座页");
         return false;
       }
-      let btn = clickableByText("登录");
-      if (btn) { btn.click(); await sleep(1500); }
-      if (isLoginPage()) { btn = clickableByText("登录"); if (btn) { btn.click(); await sleep(1500); } }
+      let btn = loginButton();
+      if (!btn) { log("未找到「登录」按钮，请手动点击登录"); return false; }
+      btn.click();
+      await sleep(2200);
+      if (isLoginPage()) { btn = loginButton(); if (btn) { btn.click(); await sleep(2200); } }
       if (isLoginPage()) { log("登录页未能继续，请手动完成登录"); return false; }
     }
-    // 3) 门户首页 → 应用中心
-    const ac = clickableByText("应用中心");
-    if (ac && isVisible(ac) && !isLectureList()) { ac.click(); await sleep(1200); }
-    // 4) 应用中心 → 科研板块 · 学术讲座 · 查看
+    // 4) 兜底：登录后若仍停留在门户/应用中心，再走 应用中心 → 科研·学术讲座·查看
     if (!isLectureList()) {
+      const ac = clickableByText("应用中心");
+      if (ac && isVisible(ac)) { ac.click(); await sleep(1200); }
       await openLectureFromAppCenter();
       await sleep(1200);
     }
@@ -172,10 +213,10 @@
     for (const tr of $all("tr", tbl)) {
       if ((tr.innerText || "").includes("讲座名称")) continue; // 跳过表头
       const hasRegBtn = $all("button, a, [role=button], [class*=btn]", tr)
-        .some(b => (b.innerText || "").trim() === "报名");
+        .some(b => norm(b.innerText) === "报名");
       if (!hasRegBtn) continue;
       const tds = $all("td", tr);
-      const cells = tds.map(c => (c.innerText || "").trim());
+      const cells = tds.map(c => norm(c.innerText));
       if (!cells.length || !cells[0]) continue;
       const g = name => { const i = colOf(name); return i >= 0 ? (cells[i] || "") : ""; };
       rows.push({
@@ -253,11 +294,11 @@
     return $all(sel).filter(el => isVisible(el));
   }
   function msgText() {
-    return visibleMsgs().map(el => (el.innerText || "").trim()).filter(Boolean).join(" | ");
+    return visibleMsgs().map(el => norm(el.innerText)).filter(Boolean).join(" | ");
   }
   function closeMsgs() {
     for (const d of visibleMsgs()) {
-      const yes = $all("button, a, [role=button], [class*=btn]", d).find(b => /确定|关闭|知道了|确认/.test((b.innerText || "").trim()) && isVisible(b));
+      const yes = $all("button, a, [role=button], [class*=btn]", d).find(b => /确定|关闭|知道了|确认/.test(norm(b.innerText)) && isVisible(b));
       if (yes) { yes.click(); return; }
     }
   }
@@ -265,7 +306,7 @@
   const SUCCESS_WORDS = ["报名成功", "预约成功", "报名完成", "报名已", "成功"];
   function realButton(cell, text) {
     const candidates = $all("button, a, [role=button], [class*=btn], [onclick]", cell)
-      .filter(el => (el.innerText || "").trim() === text || (el.innerText || "").trim().includes(text));
+      .filter(el => { const t = norm(el.innerText); return t === norm(text) || t.includes(norm(text)); });
     return candidates.find(el => el.tagName === "BUTTON") || candidates[0] || null;
   }
   function rowChanged(lec) {
@@ -285,7 +326,7 @@
       }
       const dlg = visibleMsgs().find(d => /确认|确定|是否/.test(d.innerText || "") && /报名/.test(d.innerText || ""));
       if (dlg) {
-        const yes = $all("button, a, [role=button], [class*=btn]", dlg).find(b => /确认|确定/.test((b.innerText || "").trim()) && isVisible(b));
+        const yes = $all("button, a, [role=button], [class*=btn]", dlg).find(b => /确认|确定/.test(norm(b.innerText)) && isVisible(b));
         if (yes) { yes.click(); await sleep(200); }
       }
       await sleep(250);
@@ -333,10 +374,8 @@
     await getCfg();
     if (!cfg.enabled) { log("未启用，跳过本轮扫描"); return; }
 
-    if (!isLectureList()) {
-      const recovered = await recoverIfNeeded();
-      if (!recovered) { log("未进入学术讲座列表页，跳过本轮"); return; }
-    }
+    const recovered = await recoverIfNeeded();
+    if (!recovered) { log("未进入学术讲座列表页，跳过本轮"); return; }
     try { await chrome.storage.local.set({ lastListUrl: location.href.split("#")[0] }); } catch (e) {}
 
     const opened = await openModal();
@@ -373,14 +412,16 @@
   /* ---------------- 消息监听 ---------------- */
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg) return;
-    if (msg.type === "CYCLE") { runCycle().then(() => sendResponse({ ok: true })); return true; }
-    if (msg.type === "GET_STATE") { sendResponse({ cfg, logs, url: location.href }); }
+    if (msg.type === "CYCLE") { runCycle().then(() => sendResponse({ ok: true, stale: expiredAlertPresent(), login: isLoginPage() })); return true; }
+    if (msg.type === "GET_STATE") { sendResponse({ cfg, logs, url: location.href, stale: expiredAlertPresent(), login: isLoginPage() }); }
   });
 
   /* ---------------- 自动启动 ---------------- */
   (async () => {
     await getCfg();
     await sleep(3500);
+    const pageKind = isLoginPage() ? "登录页" : isLectureList() ? "讲座列表页" : "其他页面";
+    log("内容脚本已加载：" + pageKind);
     if (cfg.enabled && !window.__swufeStarted) {
       window.__swufeStarted = true;
       log("自动扫描启动");

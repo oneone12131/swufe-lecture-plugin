@@ -54,15 +54,23 @@ async function fireScan() {
   const tabs = await chrome.tabs.query({ url: SWUFE_URLS }).catch(() => []);
   for (const t of tabs) {
     if (!t.id) continue;
-    if (lastListUrl && t.url && !t.url.startsWith(lastListUrl)) {
-      console.log("[SWUFE讲座] 标签不在列表页，导航回:", lastListUrl);
-      chrome.tabs.update(t.id, { url: lastListUrl }).catch(() => {});
-      continue;
-    }
     const ok = await chrome.tabs.sendMessage(t.id, { type: "CYCLE" }).catch(() => null);
     if (!ok) {
+      // 页面冻结/未加载 → 刷新标签页唤醒
       console.log("[SWUFE讲座] 页面未响应，刷新标签页唤醒:", t.url);
       chrome.tabs.reload(t.id).catch(() => {});
+      continue;
+    }
+    if (ok.stale) {
+      // 内容脚本检测到会话失效提示 → 刷新重登
+      console.log("[SWUFE讲座] 检测到失效提示，刷新标签页重登:", t.url);
+      chrome.tabs.reload(t.id).catch(() => {});
+      continue;
+    }
+    // 不在列表页、也不在登录页时，才导航回列表页（避免打断登录流程）
+    if (!ok.login && lastListUrl && t.url && !t.url.startsWith(lastListUrl)) {
+      console.log("[SWUFE讲座] 标签不在列表页，导航回:", lastListUrl);
+      chrome.tabs.update(t.id, { url: lastListUrl }).catch(() => {});
     }
   }
 }
