@@ -98,12 +98,33 @@
   }
 
   /* ---------------- 页面状态识别 ---------------- */
-  function isLoginPage() {
+  function bodyText() { return document.body ? (document.body.innerText || "") : ""; }
+
+  // 图3：单处登录提示（踢出旧会话）
+  function kickBtn() { return clickableByText("踢出以上会话并继续登录"); }
+
+  // 图1：研究生平台登录页（校内用户可跳统一身份认证）
+  function unifiedAuthLink() {
+    return $all('a, button, [role="button"], span, div').filter(isVisible)
+      .find(el => /校内用户请点击此处|跳转统一身份认证登录/.test(norm(el.innerText)));
+  }
+  function isPlatformLogin() {
+    if (unifiedAuthLink()) return true;
+    const b = bodyText();
+    return /研究生管理平台|校外导师登录/.test(b) ||
+      (b.includes("账号密码登录") && b.includes("手机号登录"));
+  }
+
+  // 图2：统一身份认证（CAS）登录页
+  function isCasLogin() {
     if (/authserver\/login|\/login(\?|$)/.test(location.href)) return true;
     if ($all('input[type="password"]').length || $all('#password').length) return true;
-    const body = document.body ? (document.body.innerText || "") : "";
-    return body.includes("账号登录") && (body.includes("验证码登录") || body.includes("扫码登录")) && $all("input").length > 0;
+    const b = bodyText();
+    return b.includes("账号登录") && (b.includes("验证码登录") || b.includes("扫码登录")) && $all("input").length > 0;
   }
+  // 兼容旧名：CAS 登录页
+  function isLoginPage() { return isCasLogin(); }
+
   function passwordInput() {
     return $all('input[type="password"]')[0] || $all('#password')[0] || null;
   }
@@ -117,24 +138,36 @@
     const b = clickableByText("讲座报名");
     return !!(b && isVisible(b));
   }
+  // 所有需要自动恢复/登录的页面（供后台判断不要打断登录流程）
+  function isRecoveryPage() {
+    return !!kickBtn() || isPlatformLogin() || isCasLogin() || expiredAlertPresent();
+  }
 
   // 会话失效提示关键词
-  const EXPIRE_WORDS = ["登录超时", "会话过期", "会话失效", "登录已失效", "已过期", "重新登录", "请重新登录", "身份失效", "登录状态失效", "超时未操作", "长时间未操作", "静默"];
+  const EXPIRE_WORDS = ["登录超时", "会话过期", "会话失效", "登录已失效", "已过期", "重新登录", "请重新登录", "身份失效", "登录状态失效", "超时未操作", "长时间未操作", "静默", "Network Error", "网络错误"];
   function colorIsRed(c) {
     const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(c || "");
     if (!m) return false;
     const r = +m[1], g = +m[2], b = +m[3];
     return r > 150 && g < 110 && b < 110;
   }
-  // 弹窗/提示里的红色失效文案 → 判定会话已失效，需要刷新重登
+  // 弹窗/提示里的失效文案 → 判定会话已失效，需要刷新重登
   function expiredAlertPresent() {
-    const sel = "[class*='message' i],[class*='toast' i],[class*='dialog' i],[class*='alert' i],[class*='notice' i],[class*='modal' i]";
-    return $all(sel).filter(isVisible).some(el => {
+    const sel = "[class*='message' i],[class*='toast' i],[class*='dialog' i],[class*='alert' i],[class*='notice' i],[class*='modal' i],[role='dialog']";
+    let pool = $all(sel).filter(isVisible);
+    if (!pool.some(el => EXPIRE_WORDS.some(w => (el.innerText || "").includes(w)))) {
+      // 兜底：class 不匹配时，扫描可见的小容器里的网络错误文案
+      pool = $all("div,section,aside").filter(isVisible).filter(el => {
+        const t = (el.innerText || "").trim();
+        return t.length < 120 && /Network Error|网络错误/.test(t);
+      });
+    }
+    return pool.some(el => {
       const t = (el.innerText || "").trim();
       if (!t || !EXPIRE_WORDS.some(w => t.includes(w))) return false;
       const red = colorIsRed(getComputedStyle(el).color) ||
         $all("*", el).some(c => colorIsRed(getComputedStyle(c).color) && (c.innerText || "").trim());
-      return red || /超时|失效|过期|重新登录/.test(t);
+      return red || /超时|失效|过期|重新登录|Network Error|网络错误/.test(t);
     });
   }
 
@@ -155,35 +188,54 @@
     return true;
   }
 
-  // 会话失效 / 不在讲座页时自动恢复：
-  // 失效弹窗 → 刷新重登；登录后通常直接回到讲座页；应用中心路径仅作兜底
+  // 会话失效 / 不在讲座页时自动恢复（按页面关键词逐级点击）：
+  // 失效弹窗 → 刷新重登；单处登录提示 → 踢出旧会话；平台登录页 → 跳统一认证；
+  // 统一认证页 → 点登录；最后应用中心兜底进讲座列表
   async function recoverIfNeeded() {
-    // 1) 单处登录提示：踢出以上会话并继续登录（个别情况才出现）
-    for (let i = 0; i < 3; i++) {
-      const kick = clickableByText("踢出以上会话并继续登录");
-      if (kick && isVisible(kick)) { kick.click(); await sleep(1500); } else break;
-    }
-    // 2) 会话失效红色弹窗 → 刷新页面，WebVPN 会回到登录页
+    // 1) 会话失效提示（红色报错 / Network Error 等）→ 刷新页面回到登录页
     if (expiredAlertPresent()) {
       log("检测到会话失效提示，刷新页面重新登录");
       location.reload();
       return false;
     }
-    // 3) 登录页：密码已由用户/浏览器填好才代为点击；登录后通常直接回到讲座页
-    if (isLoginPage()) {
-      const pwd = passwordInput();
-      if (!pwd || !pwd.value) {
-        log("会话已失效：登录需手动完成（插件不保存密码），登录后回到学术讲座页");
+    // 2) 图3：单处登录提示 → 踢出以上会话并继续登录
+    const kick = kickBtn();
+    if (kick && isVisible(kick)) {
+      log("单处登录提示：踢出以上会话并继续登录");
+      kick.click();
+      await sleep(1800);
+      return false;
+    }
+    // 3) 图1：研究生平台登录页 → 校内用户先跳统一身份认证；无链接则直接点登录
+    if (isPlatformLogin()) {
+      const link = unifiedAuthLink();
+      if (link) {
+        log("校内用户：跳转统一身份认证登录");
+        link.click();
+        await sleep(1800);
         return false;
       }
+      const pwd = passwordInput();
+      const btn = loginButton();
+      if (!btn) { log("平台登录页未找到按钮，请手动完成登录"); return false; }
+      if (!pwd || !pwd.value) { log("平台登录密码未填，需手动完成（插件不保存密码）"); return false; }
+      btn.click();
+      await sleep(1800);
+      return false;
+    }
+    // 4) 图2：统一身份认证 CAS 登录页 → 代为点击登录
+    if (isCasLogin()) {
+      const pwd = passwordInput();
+      if (!pwd || !pwd.value) { log("统一认证登录密码未填，需手动完成（插件不保存密码）"); return false; }
       let btn = loginButton();
       if (!btn) { log("未找到「登录」按钮，请手动点击登录"); return false; }
+      log("自动点击统一认证登录");
       btn.click();
       await sleep(2200);
-      if (isLoginPage()) { btn = loginButton(); if (btn) { btn.click(); await sleep(2200); } }
-      if (isLoginPage()) { log("登录页未能继续，请手动完成登录"); return false; }
+      if (isCasLogin()) { btn = loginButton(); if (btn) { btn.click(); await sleep(2200); } }
+      return false;
     }
-    // 4) 兜底：登录后若仍停留在门户/应用中心，再走 应用中心 → 科研·学术讲座·查看
+    // 5) 兜底：登录后若仍停留在门户/应用中心，再走 应用中心 → 科研·学术讲座·查看
     if (!isLectureList()) {
       const ac = clickableByText("应用中心");
       if (ac && isVisible(ac)) { ac.click(); await sleep(1200); }
@@ -409,19 +461,46 @@
     log(`本轮完成，等待后台自动扫描（每 ${cfg.intervalMin} 分钟）`);
   }
 
+  /* ---------------- 页面内值守循环（自动逐级完成登录） ---------------- */
+  let watchdog = null;
+  let recoveryAttempts = 0;
+  const MAX_RECOVERY = 30;
+
+  function scheduleWatchdog(ms) {
+    if (watchdog) clearTimeout(watchdog);
+    watchdog = setTimeout(runWatchdog, ms);
+  }
+  async function runWatchdog() {
+    if (!cfg.enabled) { scheduleWatchdog(5000); return; }
+    if (isLectureList()) { recoveryAttempts = 0; scheduleWatchdog(4000); return; }
+    if (isRecoveryPage()) {
+      recoveryAttempts++;
+      if (recoveryAttempts > MAX_RECOVERY) {
+        log("登录步骤多次未完成，请手动检查后再继续");
+        return;
+      }
+      await recoverIfNeeded();
+    }
+    scheduleWatchdog(3000);
+  }
+
   /* ---------------- 消息监听 ---------------- */
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg) return;
-    if (msg.type === "CYCLE") { runCycle().then(() => sendResponse({ ok: true, stale: expiredAlertPresent(), login: isLoginPage() })); return true; }
-    if (msg.type === "GET_STATE") { sendResponse({ cfg, logs, url: location.href, stale: expiredAlertPresent(), login: isLoginPage() }); }
+    if (msg.type === "CYCLE") {
+      runCycle().then(() => { scheduleWatchdog(3000); sendResponse({ ok: true, stale: expiredAlertPresent(), login: isRecoveryPage() }); });
+      return true;
+    }
+    if (msg.type === "GET_STATE") { sendResponse({ cfg, logs, url: location.href, stale: expiredAlertPresent(), login: isRecoveryPage() }); }
   });
 
   /* ---------------- 自动启动 ---------------- */
   (async () => {
     await getCfg();
-    await sleep(3500);
-    const pageKind = isLoginPage() ? "登录页" : isLectureList() ? "讲座列表页" : "其他页面";
+    await sleep(1500);
+    const pageKind = kickBtn() ? "单处登录提示" : isPlatformLogin() ? "平台登录页" : isCasLogin() ? "统一认证登录页" : isLectureList() ? "讲座列表页" : "其他页面";
     log("内容脚本已加载：" + pageKind);
+    scheduleWatchdog(1500);
     if (cfg.enabled && !window.__swufeStarted) {
       window.__swufeStarted = true;
       log("自动扫描启动");
